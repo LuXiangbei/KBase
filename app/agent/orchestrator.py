@@ -253,6 +253,10 @@ def finalize_turn(conn: sqlite3.Connection, turn: Turn, user: User, message: str
     turn.usage["out"] = count_tokens(turn.text)
     turn.latency.setdefault("llm_ms", 0.0)
     turn.cost_cny = estimate_cost(turn.usage, settings)
+    # 生成侧拒答（检索到了但没有任何句子能支撑）也要按"证据不足"处理
+    if turn.text.startswith("这个问题在现有制度库里没有找到明确依据"):
+        turn.insufficient = True
+        turn.citations = []
     # 只保留真的被回答引用到的条款，避免“检索到但没用到”的文档冒充依据
     if turn.citations and turn.text:
         cited = {int(n) for n in re.findall(r"\[(\d+)\]", turn.text)}

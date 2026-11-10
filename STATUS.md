@@ -10,14 +10,14 @@
 | P1 | 解析、切分、索引、混合检索 | ✅ | `test_chunker` / `test_rrf` / `test_retrieval` 全绿 |
 | P2 | chat SSE、引用、拒答 | ✅ | `test_api` 事件序列断言；curl 逐段输出 |
 | P3 | Agent、工单、幂等、ACL | ✅ | `test_agent` / `test_acl` / `test_e2e` 全绿 |
-| P4 | 黄金集、评测、报告 | ✅ | 60 条，exit 0，`docs/eval-report.md` |
+| P4 | 黄金集、评测、报告 | ✅ | 84 条，exit 0，`docs/eval-report.md` |
 | P5 | 前端与响应式 | ✅ | 360/768/1280 截图，overflow=0 |
 | P6 | e2e、README、架构、演示稿 | ✅ | `scripts/e2e_demo.py` 输出 E2E OK |
 
 ## 数字
 
-- 测试：**76 项用例全部通过**（`pytest -q` 退出码 0；9 个测试文件）
-- 评测：Recall@5 **1.000**、MRR **0.900**、引用有效率 **1.000**、拒答准确率 **1.000**、误拒率 **0.000**
+- 测试：**88 项用例全部通过**（`pytest -q` 退出码 0；10 个测试文件）
+- 评测：Recall@5 **1.000**、MRR **0.888**、引用有效率 **1.000**、拒答准确率 **1.000**、误拒率 **0.000**
 - 语料：30 份制度文档、125 个 chunk（含 3 份 DOCX）
 - 响应式：360 / 768 / 1280 三档，`scrollWidth - innerWidth = 0`
 

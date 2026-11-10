@@ -19,11 +19,11 @@ class Settings(BaseSettings):
     port: int = 8010
     data_dir: Path = ROOT / "data"
 
-    embed_dim: int = 512
+    embed_dim: int = 1024
     retrieve_top_k: int = 50
     rerank_top_k: int = 6
     rrf_k: int = 60
-    refusal_threshold: float = 0.10
+    refusal_threshold: float = 0.03
     refusal_weak: float = 0.34
     refusal_coverage: float = 0.18
 

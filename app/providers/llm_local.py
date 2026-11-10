@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Iterator
 
-from .embed_hash import iter_features
+from .embed_hash import content_features, iter_features
 from .rerank import coverage, split_sentences
 
 REFUSAL_TEXT = (
@@ -47,27 +47,39 @@ class LocalExtractiveLLM:
         return len(fa & fb) / len(fa | fb)
 
     def _pick(self, question: str, contexts: list[dict]) -> list[tuple[float, int, str]]:
-        from ..retrieval.query import expand_query
+        from ..retrieval.query import expand_query, normalize_query
 
-        q_feats = set(iter_features(expand_query(question)))
+        q_orig = set(content_features(normalize_query(question)))
+        q_all = set(content_features(expand_query(question)))
         wants_number = bool(NUMERIC_HINT.search(question))
-        picked: list[tuple[float, int, str]] = []
-        seen: set[str] = set()
-        for ctx in contexts:
-            for sent in split_sentences(ctx["text"])[:24]:
-                if len(sent) < 10 or INJECTION_PATTERN.search(sent):
-                    continue
-                key = self._norm(sent)
-                if key in seen:
-                    continue
-                score = coverage(q_feats, sent)
-                if score < self.min_sentence_score:
-                    continue
-                if wants_number and re.search(r"\d", sent):
-                    score += 0.05
-                seen.add(key)
-                picked.append((score, ctx["n"], sent))
-        picked.sort(key=lambda x: (-x[0], x[1]))
+
+        def scan(require_original: bool) -> list[tuple[float, int, str]]:
+            picked: list[tuple[float, int, str]] = []
+            seen: set[str] = set()
+            for ctx in contexts:
+                for sent in split_sentences(ctx["text"])[:24]:
+                    if len(sent) < 10 or INJECTION_PATTERN.search(sent):
+                        continue
+                    key = self._norm(sent)
+                    if key in seen:
+                        continue
+                    sent_feats = set(iter_features(sent))
+                    hits_orig = q_orig & sent_feats
+                    hits_all = q_all & sent_feats
+                    if not hits_all:
+                        continue
+                    if require_original and not hits_orig:
+                        continue
+                    # 原查询命中权重更高，同义词只做补充，避免“延长工作时间”这类近义词把话题带跑
+                    score = len(hits_orig) / (len(q_orig) or 1) + 0.25 * len(hits_all) / (len(q_all) or 1)
+                    if wants_number and re.search(r"\d", sent):
+                        score += 0.22
+                    seen.add(key)
+                    picked.append((score, ctx["n"], sent))
+            picked.sort(key=lambda x: (-x[0], x[1]))
+            return picked
+
+        picked = scan(require_original=True) or scan(require_original=False)
         # 每个引用最多一句，且过滤近似重复（不同文档常常写同一句话）
         used_citations: set[int] = set()
         kept: list[str] = []

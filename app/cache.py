@@ -52,8 +52,12 @@ class SemanticCache:
             if best is None:
                 self.misses += 1
                 return None
+            payload = best[1]
+            if str(payload.get("text", "")).startswith("这个问题在现有制度库里没有找到明确依据"):
+                self.misses += 1
+                return None
             self.hits += 1
-            return {**best[1], "cache_score": round(best[0], 4)}
+            return {**payload, "cache_score": round(best[0], 4)}
 
     def put(self, vec: np.ndarray, signature: str, payload: dict) -> None:
         with self._lock:

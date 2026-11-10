@@ -5,7 +5,7 @@ from typing import Sequence
 
 import numpy as np
 
-from .embed_hash import iter_features
+from .embed_hash import content_features, iter_features
 
 SENT_SPLIT = re.compile(r"(?<=[。！？；!?;\n])")
 
@@ -44,8 +44,8 @@ class HeuristicReranker:
         candidates: Sequence[dict],
         alias_query: str | None = None,
     ) -> list[float]:
-        q_feats = _features_set(query)
-        alias_feats = _features_set(alias_query) if alias_query else set()
+        q_feats = set(content_features(query))
+        alias_feats = set(content_features(alias_query)) if alias_query else set()
         scores: list[float] = []
         for cand in candidates:
             vec = cand.get("vec")

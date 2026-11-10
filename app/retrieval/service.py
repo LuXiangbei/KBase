@@ -6,12 +6,11 @@ from dataclasses import dataclass, field
 
 from ..config import Settings, get_settings
 from ..providers import get_embedder, get_reranker
-from ..providers.embed_hash import iter_features
-from ..providers.rerank import coverage
+from ..providers.embed_hash import content_features, iter_features
 from ..retrieval import hybrid
 from ..retrieval.filters import allowed_chunk_ids
 from ..retrieval.index import get_index
-from ..retrieval.query import expand_query
+from ..retrieval.query import expand_query, normalize_query
 from ..security import User, contains_injection
 
 
@@ -61,7 +60,7 @@ def retrieve(
     if not allowed:
         return RetrievalResult(insufficient=True, debug={"allowed": 0})
 
-    qvec = embedder.embed_one(query)
+    qvec = embedder.embed_one(normalize_query(query))
     expanded = expand_query(query)
     bm25_hits = index.search_bm25(conn, expanded, allowed, k=settings.retrieve_top_k)
     vec_hits = index.search_vector(qvec, allowed, k=settings.retrieve_top_k)
@@ -91,9 +90,7 @@ def retrieve(
     selected = [cid for cid, _ in ranked[:limit]]
     top_score = ranked[0][1] if ranked else 0.0
 
-    insufficient = top_score < settings.refusal_threshold or (
-        not bm25_ids and top_score < settings.refusal_weak
-    )
+    insufficient = top_score < settings.refusal_threshold and not bm25_ids
 
     parent_ids = [index.meta[cid]["parent_id"] for cid in selected if cid in index.meta]
     parents = _load_parents(conn, parent_ids)
@@ -102,13 +99,14 @@ def retrieve(
     # 词面证据：在前 3 条上下文里"并集"覆盖了多少查询特征。
     # 多跳问题需要跨文档拼证据，用并集而不是单块最大值，避免把合法的多跳问句误拒。
     top_texts = [c["text"] for c in contexts[:5]]
-    q_feats = set(iter_features(query))
-    q_feats_expanded = set(iter_features(expanded))
+    q_feats = set(content_features(normalize_query(query)))
+    q_feats_expanded = set(content_features(expanded))
     covered = set()
     covered_expanded = set()
     for text in top_texts:
-        covered |= q_feats & set(iter_features(text))
-        covered_expanded |= q_feats_expanded & set(iter_features(text))
+        doc_feats = set(iter_features(text))
+        covered |= q_feats & doc_feats
+        covered_expanded |= q_feats_expanded & doc_feats
     cov_original = len(covered) / (len(q_feats) or 1)
     cov_expanded = len(covered_expanded) / (len(q_feats_expanded) or 1)
     max_cov = max(cov_original, cov_expanded)

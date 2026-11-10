@@ -22,6 +22,14 @@ def iter_features(text: str) -> Iterable[str]:
         yield tok
 
 
+# 口语问句里大量“我/了/的/该/谁”这类虚词，会让覆盖率分母虚高，算证据前先去掉。
+STOP_CHARS = set("的了吗呢吧啊我你他她它能要该谁呀嘛哈就都也还和与及是在有把被让给得想会")
+
+
+def content_features(text: str) -> list[str]:
+    return [f for f in iter_features(text) if not any(ch in STOP_CHARS for ch in f)]
+
+
 def _bucket(feature: str, dim: int) -> tuple[int, float]:
     digest = hashlib.blake2b(feature.encode("utf-8"), digest_size=8).digest()
     value = int.from_bytes(digest, "big")

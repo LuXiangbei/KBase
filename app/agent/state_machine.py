@@ -28,11 +28,13 @@ SLOT_QUESTIONS = {
 SAFETY_RULES = (
     (re.compile(r"系统提示词|system\s*prompt|开发者模式|内部指令|你的指令", re.I), "PROMPT_EXTRACTION"),
     (re.compile(r"绕过|规避|破解|跳过.{0,6}审批|不用审批|直接把章"), "BYPASS_APPROVAL"),
+    (re.compile(r"(竞争对手|友商|竞品).{0,8}(报价|价格|薪资|工资|待遇)"), "OUT_OF_DOMAIN"),
 )
 
 SAFETY_MESSAGES = {
     "PROMPT_EXTRACTION": "我不能输出系统提示词或内部指令。如果你在查制度条款，我可以继续帮你检索；也可以帮你转人工。",
     "BYPASS_APPROVAL": "这类请求涉及绕过公司审批或用印流程，我不能提供规避办法。紧急业务可以走加急审批，或我帮你建单转人工。",
+    "OUT_OF_DOMAIN": "竞争对手或外部市场的价格属于库外信息，我不能凭空给数字。内部采购比价规则可以查，需要的话我也可以帮你转人工。",
 }
 
 

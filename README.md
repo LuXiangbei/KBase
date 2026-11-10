@@ -203,7 +203,7 @@ RECEIVED → ROUTED → NEED_SLOT ⇄ ROUTED → READY → EXECUTING → DONE / 
 - **trace**：每次请求记录检索候选数、重排耗时、引用数、token、成本、是否命中缓存；`/api/traces/{id}` 可回放。
 - **成本**：`输入/1000×单价 + 输出/1000×单价`，随 `done` 事件返回。
 
-### 5.7 前端渲染
+### 5.6 前端渲染
 
 - 回答按 Markdown 渲染：`**加粗**`、`- 列表`、`1. 有序`、`> 引用`、`` `代码` ``、`---` 分隔线；流式过程实时重排。
 - **先转义再渲染**：模型输出属于不可信内容，`escapeHtml` 在所有替换之前执行，避免 XSS。
@@ -212,7 +212,7 @@ RECEIVED → ROUTED → NEED_SLOT ⇄ ROUTED → READY → EXECUTING → DONE / 
 
 ![Markdown 渲染](screenshots/kbase-markdown.png)
 
-### 5.6 评测：门禁 + 观测
+### 5.7 评测：门禁 + 观测
 
 ```text
 84 条黄金集 → 逐条检索/生成 → 指标聚合 → 核心集阈值判定 → exit code
@@ -323,14 +323,14 @@ app/
   cache.py    semantic cache
   tracing.py  request traces
 scripts/      seed_demo / run_eval / e2e_demo / screenshots.ps1
-tests/        10 个文件、101 条用例
+tests/        10 个文件、103 条用例
 docs/         architecture / eval-report / demo-script
 ```
 
 ## 11. 测试
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q        # 101 条
+.\.venv\Scripts\python.exe -m pytest -q        # 103 条
 ```
 
 | 文件 | 覆盖 |

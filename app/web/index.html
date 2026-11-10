@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1f3864" />
+<title>KBase · 企业制度知识库</title>
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div class="app" id="app">
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menuBtn" aria-label="打开文档库" aria-expanded="false">☰</button>
+    <div class="brand">
+      <span class="logo" aria-hidden="true">K</span>
+      <div class="brand-text">
+        <strong>KBase</strong>
+        <span class="tag">制度知识库</span>
+      </div>
+    </div>
+    <div class="status" id="status" role="status">
+      <span class="dot" aria-hidden="true"></span><span id="statusText">连接中…</span>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" aria-label="文档库">
+    <div class="panel-head">
+      <h2>文档库</h2>
+      <span class="count" id="docCount">0</span>
+    </div>
+    <label class="upload">
+      <input type="file" id="fileInput" accept=".md,.markdown,.txt,.docx,.pdf" hidden />
+      <span class="upload-btn">＋ 上传制度文档</span>
+      <span class="hint">支持 MD / TXT / DOCX / PDF，重复上传自动去重</span>
+    </label>
+    <ul class="doc-list" id="docList"></ul>
+    <div class="panel-foot">
+      <span id="indexInfo">索引 0 块</span>
+      <button class="link-btn" id="refreshDocs">刷新</button>
+    </div>
+  </aside>
+
+  <main class="chat" aria-label="对话">
+    <div class="messages" id="messages" aria-live="polite">
+      <section class="empty" id="empty">
+        <h1>问制度，给条款，给页码</h1>
+        <p>答案只依据库里的制度原文，逐句带引用；找不到依据会明确说不知道，并可以帮你转工单。</p>
+        <div class="chips" id="sampleChips">
+          <button class="chip">年假天数按工龄怎么算？</button>
+          <button class="chip">一线城市出差住宿标准是多少？</button>
+          <button class="chip">合同金额多少以上需要总经理审批？</button>
+          <button class="chip">帮我建个工单，报销发票丢了</button>
+          <button class="chip">公司股票代码是多少？</button>
+        </div>
+      </section>
+    </div>
+    <form class="composer" id="composer">
+      <label class="sr-only" for="input">输入问题</label>
+      <textarea id="input" rows="1" placeholder="问制度条款，或说“帮我建个工单”" autocomplete="off"></textarea>
+      <button type="submit" id="sendBtn" class="send-btn">发送</button>
+    </form>
+  </main>
+
+  <aside class="inspector" id="inspector" aria-label="引用与工单">
+    <div class="panel-head">
+      <h2>引用</h2>
+      <button class="link-btn" id="closeInspector" aria-label="收起引用">收起</button>
+    </div>
+    <div class="citation-list" id="citationList">
+      <p class="muted">回答引用的条款会出现在这里，点编号可定位原文。</p>
+    </div>
+    <div class="panel-head sub">
+      <h2>我的工单</h2>
+      <button class="link-btn" id="refreshTickets">刷新</button>
+    </div>
+    <div class="ticket-list" id="ticketList"><p class="muted">还没有工单。</p></div>
+  </aside>
+</div>
+<div class="scrim" id="scrim" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="/app.js" defer></script>
+</body>
+</html>

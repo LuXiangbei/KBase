@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>layout audit</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #fff; }
+  iframe { border: 0; display: block; width: 360px; height: 900px; }
+</style>
+</head>
+<body>
+<!-- 开发自检页：headless 浏览器有最小窗口宽度（约 492px），
+     用同源 iframe 复现 360px 视口，验证手机断点下没有横向溢出。 -->
+<iframe id="frame" src="/?embed=1" title="360px 视口预览"></iframe>
+<script>
+  (function () {
+    var width = Number(new URLSearchParams(location.search).get("w") || 360);
+    var frame = document.getElementById("frame");
+    frame.style.width = width + "px";
+    frame.addEventListener("load", function () {
+      try {
+        var win = frame.contentWindow;
+        var doc = frame.contentDocument;
+        var scrollWidth = doc.documentElement.scrollWidth;
+        // 让窗口留白与页面底色一致，截图里不会出现突兀的白边
+        var bg = win.getComputedStyle(doc.documentElement).getPropertyValue("--bg").trim();
+        document.body.style.background = bg || "#f5f7fb";
+        document.title = "audit w=" + win.innerWidth + " sw=" + scrollWidth +
+          " overflow=" + (scrollWidth - win.innerWidth);
+      } catch (err) {
+        document.title = "audit error " + err.message;
+      }
+    });
+    frame.src = "/?embed=1&w=" + width;
+  })();
+</script>
+</body>
+</html>

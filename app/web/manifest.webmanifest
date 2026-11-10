@@ -1,0 +1,11 @@
+{
+  "name": "KBase · 企业制度知识库",
+  "short_name": "KBase",
+  "description": "带引用、可拒答、能转工单的制度问答助手",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#1f3864",
+  "lang": "zh-CN",
+  "icons": []
+}

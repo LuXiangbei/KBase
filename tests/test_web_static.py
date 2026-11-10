@@ -54,6 +54,24 @@ def test_stream_uses_fetch_reader():
     assert "EventSource" not in js
 
 
+def test_markdown_renderer_present_and_safe():
+    js = read("app.js")
+    assert "function renderMarkdown" in js
+    assert "function escapeHtml" in js
+    # 必须先转义再渲染，避免模型输出被当成 HTML 执行
+    assert js.index("escapeHtml(src)") < js.index("renderBlocks(parts[i])")
+    assert "<strong>$1</strong>" in js
+    assert "innerHTML = renderMarkdown" in js
+    # 正文引用可点击
+    assert "cite-ref" in js and "focusCitation" in js
+
+
+def test_markdown_styles_present():
+    css = read("styles.css")
+    for selector in (".msg .bubble strong", ".msg .bubble ul", ".msg .bubble pre", ".msg .bubble blockquote", ".cite-ref"):
+        assert selector in css, selector
+
+
 def test_aria_live_region():
     html = read("index.html")
     assert 'aria-live="polite"' in html

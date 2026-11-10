@@ -114,6 +114,105 @@
     }
   }
 
+  // ---------- Markdown 渲染（先转义再渲染，避免 XSS） ----------
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function inline(text) {
+    return text
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+      .replace(/\[(\d+)\]/g, '<span class="cite-ref" data-cite="$1">[$1]</span>')
+      // 流式输出时可能出现未闭合的标记，先清掉，避免半截 ** 露在界面上
+      .replace(/\*\*/g, "")
+      .replace(/`/g, "");
+  }
+
+  function renderBlocks(text) {
+    const lines = text.split("\n");
+    let html = "";
+    let list = null;
+    let para = [];
+    const flushPara = () => {
+      if (para.length) {
+        html += `<p>${para.map(inline).join("<br>")}</p>`;
+        para = [];
+      }
+    };
+    const closeList = () => {
+      if (list) {
+        html += `</${list}>`;
+        list = null;
+      }
+    };
+    for (const raw of lines) {
+      const line = raw.replace(/\s+$/, "");
+      if (!line.trim()) { flushPara(); closeList(); continue; }
+      let m;
+      if ((m = line.match(/^(#{1,4})\s+(.*)$/))) {
+        flushPara(); closeList();
+        const level = Math.min(m[1].length + 2, 5);
+        html += `<h${level}>${inline(m[2])}</h${level}>`;
+        continue;
+      }
+      if (/^[-*•]\s+/.test(line)) {
+        flushPara();
+        if (list !== "ul") { closeList(); html += "<ul>"; list = "ul"; }
+        html += `<li>${inline(line.replace(/^[-*•]\s+/, ""))}</li>`;
+        continue;
+      }
+      if ((m = line.match(/^\d+[.)]\s+(.*)$/))) {
+        flushPara();
+        if (list !== "ol") { closeList(); html += "<ol>"; list = "ol"; }
+        html += `<li>${inline(m[1])}</li>`;
+        continue;
+      }
+      if (/^(?:>|&gt;)\s?/.test(line)) {
+        flushPara(); closeList();
+        html += `<blockquote>${inline(line.replace(/^(?:>|&gt;)\s?/, ""))}</blockquote>`;
+        continue;
+      }
+      if (/^-{3,}$/.test(line)) {
+        flushPara(); closeList(); html += "<hr>";
+        continue;
+      }
+      closeList();
+      para.push(line);
+    }
+    flushPara();
+    closeList();
+    return html;
+  }
+
+  function renderMarkdown(src) {
+    const escaped = escapeHtml(src);
+    const parts = escaped.split(/```/);
+    let out = "";
+    for (let i = 0; i < parts.length; i += 1) {
+      if (i % 2 === 1) {
+        out += `<pre><code>${parts[i].replace(/^[a-zA-Z0-9_-]*\n/, "")}</code></pre>`;
+      } else {
+        out += renderBlocks(parts[i]);
+      }
+    }
+    return out;
+  }
+
+  function scheduleRender(item) {
+    if (item.raf) return;
+    item.raf = requestAnimationFrame(() => {
+      item.raf = null;
+      item.bubble.innerHTML = renderMarkdown(item.raw);
+      scrollToEnd();
+    });
+  }
+
   // ---------- 对话 ----------
   function ensureEmptyRemoved() {
     if (els.empty && els.empty.parentNode) els.empty.remove();
@@ -128,11 +227,15 @@
     who.textContent = role === "user" ? "我" : "KBase";
     const bubble = document.createElement("div");
     bubble.className = "bubble";
-    bubble.textContent = text;
+    if (role === "user") {
+      bubble.textContent = text;
+    } else {
+      bubble.innerHTML = renderMarkdown(text);
+    }
     wrap.append(who, bubble);
     els.messages.append(wrap);
     scrollToEnd();
-    return { wrap, bubble };
+    return { wrap, bubble, raw: role === "user" ? "" : text, raf: null };
   }
 
   function scrollToEnd() {
@@ -223,11 +326,16 @@
         state._insufficient = true;
       }
     } else if (event === "delta" && state.lastBubble) {
-      state.lastBubble.bubble.textContent += data.text || "";
-      scrollToEnd();
+      state.lastBubble.raw += data.text || "";
+      scheduleRender(state.lastBubble);
     } else if (event === "done") {
       if (!state.lastBubble) return;
       state.lastBubble.wrap.classList.remove("streaming");
+      if (state.lastBubble.raf) {
+        cancelAnimationFrame(state.lastBubble.raf);
+        state.lastBubble.raf = null;
+      }
+      state.lastBubble.bubble.innerHTML = renderMarkdown(state.lastBubble.raw);
       if (data.citations && data.citations.length) renderCitations(data.citations);
       attachCiteChips(state.lastBubble.bubble, data.citations || []);
       if (data.ticket) loadTickets();
@@ -377,6 +485,14 @@
     if (btn) sendMessage(btn.textContent);
   });
 
+  // 正文里的 [1] 也能点，直接定位到右侧引用
+  els.messages.addEventListener("click", (e) => {
+    const ref = e.target.closest(".cite-ref");
+    if (!ref) return;
+    e.preventDefault();
+    focusCitation(Number(ref.dataset.cite));
+  });
+
   // ---------- 启动 ----------
   (async function init() {
     try {
@@ -398,9 +514,21 @@
       }, 800);
     }
 
-    // ?demo=1 时自动演示一轮问答，用于截图与录屏；不影响正常使用
-    if (new URLSearchParams(location.search).get("demo") === "1") {
-      setTimeout(() => sendMessage("一线城市出差住宿标准是多少？"), 300);
+    // ?demo=complex 用复杂问题演示 Markdown 与计算过程；?demo=static 渲染一段离线样例用于自检
+    const demo = new URLSearchParams(location.search).get("demo");
+    if (demo === "static") {
+      const sample = "**依据：** 累计工龄满 10 年不满 20 年的，年休假 10 天 [1]。\n\n"
+        + "**计算：** 应休 10 天 − 已休 3 天 = **7 天**。\n\n"
+        + "> 提示：请在 OA 提前提交申请。\n\n"
+        + "- 3 天以内：直属主管审批\n- 3 天以上：部门负责人审批\n\n"
+        + "1. 提交申请\n2. 主管审批\n\n"
+        + "代码示例：`annual_leave = 10 - 3`";
+      addMessage("bot", sample);
+    } else if (demo) {
+      const question = demo === "complex"
+        ? "我已休3天年假，工龄10年，还剩几天？"
+        : "一线城市出差住宿标准是多少？";
+      setTimeout(() => sendMessage(question), 400);
     }
   })();
 })();

@@ -33,9 +33,13 @@ class Settings(BaseSettings):
 
     llm_provider: str = "local"
     embed_provider: str = "hash"
-    openai_base_url: str = ""
+    openai_base_url: str = "https://api.deepseek.com"
     openai_api_key: str = ""
-    openai_model: str = ""
+    openai_model: str = "deepseek-flash"
+    openai_model_deep: str = "deepseek-v4-pro"
+    max_tokens_simple: int = 400
+    max_tokens_complex: int = 900
+    llm_timeout: float = 60.0
 
     max_tool_calls: int = 3
     cors_origins: list[str] = ["*"]

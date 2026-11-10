@@ -21,8 +21,19 @@ def get_embedder(dim: int = 512):
 @lru_cache
 def get_llm():
     settings = get_settings()
-    if settings.llm_provider == "openai" and settings.openai_api_key and settings.openai_base_url:
-        return OpenAICompatLLM(settings.openai_base_url, settings.openai_api_key, settings.openai_model)
+    if settings.llm_provider in ("openai", "deepseek") and settings.openai_api_key:
+        from .llm_deepseek import DeepSeekLLM, ResilientLLM
+
+        primary = DeepSeekLLM(
+            settings.openai_base_url,
+            settings.openai_api_key,
+            model_fast=settings.openai_model or "deepseek-flash",
+            model_deep=settings.openai_model_deep or "deepseek-v4-pro",
+            timeout=settings.llm_timeout,
+            max_tokens_simple=settings.max_tokens_simple,
+            max_tokens_complex=settings.max_tokens_complex,
+        )
+        return ResilientLLM(primary, LocalExtractiveLLM())
     return LocalExtractiveLLM()
 
 

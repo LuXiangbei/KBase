@@ -16,6 +16,7 @@ from ..retrieval.service import RetrievalResult, retrieve
 from ..security import User
 from ..tracing import Trace, record as record_trace
 from . import state_machine as sm
+from .router import route_mode
 from .tools import ToolError, audit, create_ticket, get_ticket_status
 
 REFUSAL_TEXT = (
@@ -45,6 +46,9 @@ class Turn:
     cache_signature: str | None = None
     trace_id: str = ""
     cost_cny: float = 0.0
+    mode: str = "simple"
+    model: str = ""
+    engine: str = ""
     _gen: Iterator[str] | None = None
 
     def stream(self) -> Iterator[str]:
@@ -109,6 +113,14 @@ def _ticket_text(ticket: dict) -> str:
     )
 
 
+def _history(conn: sqlite3.Connection, session_id: str, limit: int = 6) -> list[dict]:
+    rows = conn.execute(
+        "SELECT role, content FROM messages WHERE session_id=? ORDER BY created_at DESC LIMIT ?",
+        (session_id, limit),
+    ).fetchall()
+    return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+
 def build_turn(
     conn: sqlite3.Connection,
     user: User,
@@ -121,6 +133,7 @@ def build_turn(
     started = time.perf_counter()
     session = _get_session(conn, session_id, user)
     slots = loads(session["slots"], {})
+    history = _history(conn, session["id"])
     _save_message(conn, session["id"], "user", message)
     conn.commit()  # 立刻落盘：流式生成的连接是另一条，不能长期占写锁
 
@@ -128,7 +141,7 @@ def build_turn(
     # 上一轮还在等槽位时，这一轮的补充信息要继续走建单，而不是掉回问答
     if session["state"] == sm.STATE_NEED_SLOT and intent in ("policy_qa", "out_of_scope"):
         intent = "ticket_create"
-    turn = build_turn_for_intent(conn, user, message, session, slots, intent, request_id, settings)
+    turn = build_turn_for_intent(conn, user, message, session, slots, intent, request_id, settings, history)
     turn.latency["total_ms"] = round((time.perf_counter() - started) * 1000, 2)
     return turn
 
@@ -142,6 +155,7 @@ def build_turn_for_intent(
     intent: str,
     request_id: str | None,
     settings: Settings,
+    history: list[dict] | None = None,
 ) -> Turn:
     turn = Turn(
         session_id=session["id"],
@@ -213,7 +227,10 @@ def build_turn_for_intent(
         return turn
 
     # policy_qa / out_of_scope
-    turn.cache_signature = _cache_signature(conn, user) if settings.cache_enabled else None
+    turn.mode = route_mode(message, history)
+    turn.cache_signature = (
+        f"{turn.mode}:{_cache_signature(conn, user)}" if settings.cache_enabled else None
+    )
     if settings.cache_enabled and turn.cache_signature:
         qvec = get_embedder(settings.embed_dim).embed_one(message)
         cached = CACHE.get(qvec, turn.cache_signature)
@@ -222,11 +239,18 @@ def build_turn_for_intent(
             turn.cached = True
             turn.text = cached.get("text", "")
             turn.citations = cached.get("citations", [])
-            turn.usage = {"in": count_tokens(message), "out": count_tokens(turn.text)}
+            turn.model = cached.get("model", "")
+            turn.usage = {"in": 0, "out": 0}
             turn.latency["retrieve_ms"] = 0.0
             return turn
 
-    result: RetrievalResult = retrieve(conn, message, user, settings)
+    # 多轮补槽：像“工龄八年”这种短回答，单独检索会丢上下文，拼上上一轮问题再召回
+    retrieval_query = message
+    if len(message) <= 8 and history:
+        last_user = next((h["content"] for h in reversed(history) if h["role"] == "user"), "")
+        if last_user:
+            retrieval_query = f"{last_user} {message}"
+    result: RetrievalResult = retrieve(conn, retrieval_query, user, settings)
     turn.debug = result.debug
     turn.insufficient = result.insufficient
     turn.citations = result.citations_public
@@ -240,21 +264,65 @@ def build_turn_for_intent(
 
     llm = get_llm()
     turn.state = sm.STATE_DONE
-    turn._gen = llm.stream(message, result.contexts)
-    turn.usage = {
+    turn.model = getattr(getattr(llm, "primary", llm), "model_for", lambda m: "")(turn.mode)
+    usage_sink: dict = {
         "in": count_tokens(message) + sum(count_tokens(c["text"]) for c in result.contexts),
         "out": 0,
     }
+    turn._gen = llm.stream(
+        message,
+        result.contexts,
+        history,
+        mode=turn.mode,
+        usage_sink=usage_sink,
+    )
+    turn.usage = usage_sink
+    turn.debug["mode"] = turn.mode
     return turn
+
+
+LEAK_PATTERNS = re.compile(r"sk-[A-Za-z0-9]{12,}|以下是系统提示词|system prompt is", re.I)
+
+
+def guard_output(text: str) -> tuple[str, bool]:
+    """输出侧防泄漏：即使模型被诱导，也不能把密钥/系统提示词带出去。"""
+    if LEAK_PATTERNS.search(text or ""):
+        return (
+            "我不能输出系统提示词、密钥或内部配置。你可以继续问制度条款，或让我帮你转人工。",
+            True,
+        )
+    return text, False
 
 
 def finalize_turn(conn: sqlite3.Connection, turn: Turn, user: User, message: str, settings: Settings | None = None) -> dict:
     settings = settings or get_settings()
-    turn.usage["out"] = count_tokens(turn.text)
+    paid_call = (
+        settings.llm_provider in ("deepseek", "openai")
+        and turn._gen is not None
+        and not turn.cached
+    )
+    if turn._gen is None or turn.cached:
+        # 没有真正调用模型（拒答/建单/缓存命中）：不计 token
+        turn.usage = {"in": 0, "out": 0}
+    else:
+        turn.usage.setdefault("in", 0)
+        turn.usage["out"] = turn.usage.get("out") or count_tokens(turn.text)
     turn.latency.setdefault("llm_ms", 0.0)
-    turn.cost_cny = estimate_cost(turn.usage, settings)
+    turn.cost_cny = estimate_cost(turn.usage, settings) if paid_call else 0.0
     # 生成侧拒答（检索到了但没有任何句子能支撑）也要按"证据不足"处理
     if turn.text.startswith("这个问题在现有制度库里没有找到明确依据"):
+        turn.insufficient = True
+        turn.citations = []
+    # 真实模型可能用别的措辞表达“没依据”：开头出现拒答标记且全文没有任何引用，按拒答处理
+    head = turn.text[:80]
+    refusal_markers = ("没有找到明确依据", "没有找到相关", "资料中没有", "无法确定", "未找到", "没有相关规定")
+    if any(marker in head for marker in refusal_markers) and not re.search(r"\[\d+\]", turn.text):
+        turn.insufficient = True
+        turn.citations = []
+    # 输出侧防泄漏：即使模型被诱导，也不能把密钥或系统提示词带出去
+    guarded, blocked = guard_output(turn.text)
+    if blocked:
+        turn.text = guarded
         turn.insufficient = True
         turn.citations = []
     # 只保留真的被回答引用到的条款，避免“检索到但没用到”的文档冒充依据
@@ -274,7 +342,7 @@ def finalize_turn(conn: sqlite3.Connection, turn: Turn, user: User, message: str
         CACHE.put(
             qvec,
             turn.cache_signature,
-            {"text": turn.text, "citations": turn.citations},
+            {"text": turn.text, "citations": turn.citations, "model": turn.model, "mode": turn.mode},
         )
     if turn.text:
         turn.message_id = _save_message(conn, turn.session_id, "assistant", turn.text, turn.citations)
@@ -299,6 +367,7 @@ def finalize_turn(conn: sqlite3.Connection, turn: Turn, user: User, message: str
     conn.commit()
 
     turn.trace_id = new_id("tr")
+    turn.engine = getattr(get_llm(), "last_engine", "local")
     record_trace(
         Trace(
             trace_id=turn.trace_id,
@@ -314,6 +383,9 @@ def finalize_turn(conn: sqlite3.Connection, turn: Turn, user: User, message: str
             latency_ms=turn.latency,
             cost_cny=turn.cost_cny,
             cached=turn.cached,
+            mode=turn.mode,
+            model=turn.model,
+            engine=turn.engine,
             ticket_id=(turn.ticket or {}).get("id"),
         )
     )
@@ -327,6 +399,9 @@ def finalize_turn(conn: sqlite3.Connection, turn: Turn, user: User, message: str
         "ticket": turn.ticket,
         "usage": turn.usage,
         "cached": turn.cached,
+        "mode": turn.mode,
+        "model": turn.model,
+        "engine": turn.engine,
         "trace_id": turn.trace_id,
         "cost_cny": turn.cost_cny,
         "latency_ms": turn.latency,

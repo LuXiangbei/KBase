@@ -16,7 +16,8 @@ FILLER = "根据现有制度，"
 
 # 被检索到的文档里可能藏着指令型文本（间接注入）。抽取式回答绝不能把它当作答案引用。
 INJECTION_PATTERN = re.compile(
-    r"忽略(以上|之前|上述)|系统提示词|你现在是|直接输出|不需要审批|年假为?\s*30\s*天|system\s*prompt",
+    r"忽略(以上|之前|上述)[^。]{0,12}(指令|规则|设定|提示词|内容)|系统提示词|你现在是|直接输出|不需要审批|"
+    r"年假为?\s*30\s*天|system\s*prompt",
     re.I,
 )
 NUMERIC_HINT = re.compile(r"多少|几天|几号|标准|上限|比例|时限|期限|金额|天数")
@@ -109,8 +110,18 @@ class LocalExtractiveLLM:
             lines.append(f"{prefix}{sent.rstrip('。')} [{n}]。")
         return "".join(lines)
 
-    def stream(self, question: str, contexts: list[dict], history: list[dict] | None = None) -> Iterator[str]:
+    def stream(
+        self,
+        question: str,
+        contexts: list[dict],
+        history: list[dict] | None = None,
+        mode: str | None = None,
+        usage_sink: dict | None = None,
+    ) -> Iterator[str]:
         text = self.answer(question, contexts, history)
+        if usage_sink is not None:
+            usage_sink.setdefault("in", 0)
+            usage_sink.setdefault("out", 0)
         step = 6
         for i in range(0, len(text), step):
             yield text[i : i + step]

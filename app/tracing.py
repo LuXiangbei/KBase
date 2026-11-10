@@ -22,6 +22,9 @@ class Trace:
     latency_ms: dict = field(default_factory=dict)
     cost_cny: float = 0.0
     cached: bool = False
+    mode: str = ""
+    model: str = ""
+    engine: str = ""
     ticket_id: str | None = None
 
 

@@ -10,8 +10,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
+
+# 评测必须可复现且不烧钱：强制走离线 provider，不受 .env 里的在线模型影响
+os.environ["KBASE_LLM_PROVIDER"] = "local"
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))

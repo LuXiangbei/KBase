@@ -197,12 +197,13 @@ def test_trace_recorded_and_queryable(client):
     assert client.get("/api/traces/tr_missing").status_code == 404
 
 
-def test_cost_is_computed(client):
+def test_cost_is_zero_for_local_provider(client):
     upload(client, "leave.md", "休假制度", [("第1条 年假", "年休假 5 天。")])
     done = client.post("/api/chat", json={"message": "年假有几天？"}).json()
-    assert done["cost_cny"] > 0
+    assert done["cost_cny"] == 0
     assert done["usage"]["in"] > 0
     assert done["usage"]["out"] > 0
+    assert done["mode"] in ("simple", "complex")
 
 
 def test_tools_endpoint_lists_whitelist(client):

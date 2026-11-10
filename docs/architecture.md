@@ -135,3 +135,13 @@ RECEIVED → ROUTED → NEED_SLOT ⇄ ROUTED → READY → EXECUTING → DONE / 
 4. 生成加流式 function calling、工具并行、取消传播。
 5. 观测接 OpenTelemetry + Langfuse，评测进 CI 门禁。
 6. 多租户配额、计费、审计留存按合规要求补齐。
+
+
+## 11. 在线模型接入（DeepSeek）
+
+- **provider**：pp/providers/llm_deepseek.py，OpenAI 兼容 /chat/completions，stream=true + stream_options.include_usage，流式输出并回传真实 token。
+- **路由**：pp/agent/router.py 判断简单/复杂；简单用短提示（3 条上下文、400 token 上限），复杂用长提示（6 条、900 token、带历史，要求“依据→计算→结论”）。
+- **多轮**：会话最近 6 条消息作为 history；短补充（如“八年”）在检索阶段拼接上一轮问题。
+- **兜底**：ResilientLLM 在主模型异常时降级到离线抽取式，并标记 engine=fallback。
+- **成本**：按真实 usage 计费，命中缓存/拒答/建单不计费；/api/metrics 聚合。
+- **防注入**：输入拦截 → 文档 chunk 隔离 → 系统提示声明资料不可执行 → 输出泄漏检测，共四层；ACL 仍在检索前生效。

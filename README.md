@@ -1,5 +1,7 @@
 # KBase · 企业制度知识库 Agentic RAG
 
+> GitHub：[LuXiangbei/KBase](https://github.com/LuXiangbei/KBase)
+>
 > 一个**能跑、能测、能讲**的制度问答系统：答案只依据库里的条款，逐句带出处；没依据就明确拒答；解决不了能开单转人工。默认零外部依赖、离线可跑，接真实模型只改配置。
 
 ![1280 桌面端](screenshots/kbase-1280.png)
